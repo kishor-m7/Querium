@@ -107,7 +107,10 @@ export function DiagramCard({ kind, title, mermaid }: DiagramCardProps) {
 
       <div ref={captureRef} className="overflow-auto bg-card p-4">
         {error ? (
-          <p className="text-xs text-destructive">Could not render this diagram: {error}</p>
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+            <p className="font-semibold">Unable to render the ER diagram.</p>
+            <p className="mt-1 opacity-90">{error}</p>
+          </div>
         ) : svg ? (
           // Mermaid output is rendered with securityLevel "strict", which strips scripts.
           <div

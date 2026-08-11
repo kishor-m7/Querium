@@ -28,12 +28,14 @@ export function getLLMModel(runIdFetch?: ReturnType<typeof createRunIdFetch>): L
   const lovableApiKey = process.env["LOVABLE_API_KEY"];
 
   if (geminiApiKey) {
+    // Only pass custom baseURL if it points to a proxy/custom host, not the standard Google API host.
+    const isStandardHost = !geminiBaseUrl || geminiBaseUrl.includes("generativelanguage.googleapis.com");
     const google = createGoogleGenerativeAI({
       apiKey: geminiApiKey,
-      ...(geminiBaseUrl ? { baseURL: geminiBaseUrl } : {}),
+      ...(!isStandardHost ? { baseURL: geminiBaseUrl } : {}),
       ...(runIdFetch ? { fetch: runIdFetch.fetch } : {}),
     });
-    const modelName = geminiModel || "gemini-2.5-flash";
+    const modelName = geminiModel || "gemini-flash-latest";
     return {
       model: google(modelName),
       providerName: "google-gemini",
