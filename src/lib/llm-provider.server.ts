@@ -1,4 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createGateway, createRunIdFetch } from "./ai-gateway.server";
 import type { LanguageModel } from "ai";
 
@@ -13,14 +14,32 @@ export type LLMProviderConfig = {
  * Resolves the configured LLM model based on environment variables.
  * 
  * Config precedence:
- * 1. Standard OpenAI-compatible API: LLM_API_KEY (with optional LLM_BASE_URL and LLM_MODEL)
- * 2. Lovable AI Gateway: LOVABLE_API_KEY (with optional LLM_MODEL)
+ * 1. Google Gemini: GEMINI_API_KEY (with optional GEMINI_BASE_URL and GEMINI_MODEL)
+ * 2. Standard OpenAI-compatible API: LLM_API_KEY (with optional LLM_BASE_URL and LLM_MODEL)
+ * 3. Lovable AI Gateway: LOVABLE_API_KEY (with optional LLM_MODEL)
  */
 export function getLLMModel(runIdFetch?: ReturnType<typeof createRunIdFetch>): LLMProviderConfig {
+  const geminiApiKey = process.env["GEMINI_API_KEY"];
+  const geminiBaseUrl = process.env["GEMINI_BASE_URL"];
+  const geminiModel = process.env["GEMINI_MODEL"];
   const llmApiKey = process.env["LLM_API_KEY"];
   const llmBaseUrl = process.env["LLM_BASE_URL"];
   const llmModel = process.env["LLM_MODEL"];
   const lovableApiKey = process.env["LOVABLE_API_KEY"];
+
+  if (geminiApiKey) {
+    const google = createGoogleGenerativeAI({
+      apiKey: geminiApiKey,
+      ...(geminiBaseUrl ? { baseURL: geminiBaseUrl } : {}),
+      ...(runIdFetch ? { fetch: runIdFetch.fetch } : {}),
+    });
+    const modelName = geminiModel || "gemini-2.5-flash";
+    return {
+      model: google(modelName),
+      providerName: "google-gemini",
+      modelName,
+    };
+  }
 
   if (llmApiKey) {
     const openai = createOpenAI({
@@ -48,6 +67,6 @@ export function getLLMModel(runIdFetch?: ReturnType<typeof createRunIdFetch>): L
   }
 
   throw new Error(
-    "No LLM configuration found. Please set LLM_API_KEY (or LOVABLE_API_KEY) in server environment variables."
+    "No LLM configuration found. Please set GEMINI_API_KEY, LLM_API_KEY, or LOVABLE_API_KEY in server environment variables."
   );
 }

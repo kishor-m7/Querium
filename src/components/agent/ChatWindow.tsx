@@ -31,6 +31,7 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import queriumMark from "@/assets/querium-mark.png";
+import { normalizeError } from "@/lib/error-capture";
 
 const SUGGESTIONS = [
   "Top 5 products by revenue this quarter",
@@ -41,6 +42,14 @@ const SUGGESTIONS = [
 ];
 
 const CONFIRM_KEY = "querium:confirm-sql";
+
+export function normalizeChatError(err: unknown): string {
+  const result = normalizeError(err);
+  if (!result || result === "[object Object]") {
+    return "AI provider request failed. Please check backend configuration.";
+  }
+  return result;
+}
 
 export function ChatWindow({
   threadId,
@@ -92,7 +101,8 @@ export function ChatWindow({
       messages: initialMessages,
       transport,
       onError: (chatError) => {
-        toast.error(chatError.message || "The agent hit an error");
+        const msg = normalizeChatError(chatError);
+        toast.error(msg);
       },
       onFinish: () => {
         onTurnComplete?.();
@@ -249,32 +259,38 @@ export function ChatWindow({
             </div>
           )}
 
-          {error && (
-            <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              <p>
-                {error.message.includes("<!doctype") || error.message.includes("<html")
-                  ? "Unable to reach the Querium AI backend. Please check the server/API configuration."
-                  : error.message.includes("Thread not found")
-                    ? "Your conversation could not be restored. A new conversation has been created."
-                    : error.message}
-              </p>
-              <div className="mt-2 flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (error.message.includes("Thread not found")) {
-                      window.location.href = "/c";
-                    } else {
-                      void regenerate();
-                    }
-                  }}
-                >
-                  {error.message.includes("Thread not found") ? "Start New Chat" : "Retry"}
-                </Button>
+          {error && (() => {
+            const rawMsg = normalizeChatError(error);
+            const isHtml = rawMsg.includes("<!doctype") || rawMsg.includes("<html");
+            const isThreadNotFound = rawMsg.includes("Thread not found");
+            const displayMsg = isHtml
+              ? "Unable to reach the Querium AI backend. Please check the server/API configuration."
+              : isThreadNotFound
+                ? "Your conversation could not be restored. A new conversation has been created."
+                : rawMsg;
+
+            return (
+              <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                <p className="text-xs font-semibold uppercase tracking-wider text-destructive/80">Chat request failed</p>
+                <p className="mt-1 font-medium">{displayMsg}</p>
+                <div className="mt-2 flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (isThreadNotFound) {
+                        window.location.href = "/c";
+                      } else {
+                        void regenerate();
+                      }
+                    }}
+                  >
+                    {isThreadNotFound ? "Start New Chat" : "Retry"}
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>

@@ -79,3 +79,71 @@ export function consumeLastCapturedError(): unknown {
   lastCapturedError = undefined;
   return error;
 }
+
+export function normalizeError(error: unknown): string {
+  if (error == null) return "Unknown error occurred.";
+
+  if (typeof error === "string") {
+    const trimmed = error.trim();
+    if (!trimmed || trimmed === "[object Object]") return "Unknown error occurred.";
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return normalizeError(parsed);
+      } catch {
+        // ignore parse failure
+      }
+    }
+    return trimmed;
+  }
+
+  if (typeof error === "object") {
+    const obj = error as Record<string, unknown>;
+
+    // 1. Direct message property
+    if (typeof obj["message"] === "string" && obj["message"].trim()) {
+      const msg = normalizeError(obj["message"]);
+      if (msg && msg !== "Unknown error occurred." && msg !== "[object Object]") {
+        return msg;
+      }
+    }
+
+    // 2. Direct error property (e.g. { error: "..." } or { error: { message: "..." } })
+    if (obj["error"] != null) {
+      const errVal = normalizeError(obj["error"]);
+      if (errVal && errVal !== "Unknown error occurred." && errVal !== "[object Object]") {
+        return errVal;
+      }
+    }
+
+    // 3. Known error detail fields
+    for (const key of ["cause", "details", "description", "reason", "statusText"]) {
+      if (obj[key] != null) {
+        const val = normalizeError(obj[key]);
+        if (val && val !== "Unknown error occurred." && val !== "[object Object]") {
+          return val;
+        }
+      }
+    }
+
+    // 4. HTTP Status code handling if message wasn't found
+    const status = typeof obj["status"] === "number" ? obj["status"] : typeof obj["statusCode"] === "number" ? obj["statusCode"] : null;
+    if (status != null) {
+      const code = typeof obj["code"] === "string" ? ` ${obj["code"]}` : "";
+      return `HTTP ${status}${code}`.trim();
+    }
+
+    // 5. Safe JSON stringify as fallback
+    try {
+      const str = JSON.stringify(obj);
+      if (str && str !== "{}" && str !== "[object Object]") {
+        return str;
+      }
+    } catch {
+      // ignore stringify failure
+    }
+  }
+
+  return "Unknown error occurred.";
+}
+
