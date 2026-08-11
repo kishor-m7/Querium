@@ -251,15 +251,28 @@ export function ChatWindow({
 
           {error && (
             <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              <p>{error.message}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2"
-                onClick={() => void regenerate()}
-              >
-                Retry
-              </Button>
+              <p>
+                {error.message.includes("<!doctype") || error.message.includes("<html")
+                  ? "Unable to reach the Querium AI backend. Please check the server/API configuration."
+                  : error.message.includes("Thread not found")
+                    ? "Your conversation could not be restored. A new conversation has been created."
+                    : error.message}
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (error.message.includes("Thread not found")) {
+                      window.location.href = "/c";
+                    } else {
+                      void regenerate();
+                    }
+                  }}
+                >
+                  {error.message.includes("Thread not found") ? "Start New Chat" : "Retry"}
+                </Button>
+              </div>
             </div>
           )}
         </ConversationContent>

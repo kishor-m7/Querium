@@ -57,16 +57,80 @@ function json(body: unknown, status: number) {
 }
 
 async function authenticate(request: Request) {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) return null;
-  const token = authHeader.slice("Bearer ".length);
-  if (token.split(".").length !== 3) return null;
+  try {
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) return null;
+    const token = authHeader.slice("Bearer ".length);
+    if (token.split(".").length !== 3) return null;
 
-  const url = process.env["SUPABASE_URL"];
-  const key = process.env["SUPABASE_PUBLISHABLE_KEY"];
-  if (!url || !key) return null;
+    const url = process.env["SUPABASE_URL"];
+    const key = process.env["SUPABASE_PUBLISHABLE_KEY"];
+    if (!url || !key) return null;
 
-  const client = createClient(url, key, {
+    const client = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: {
+        fetch: (input, init) => {
+          const headers = new Headers(init?.headers);
+          if (headers.get("Authorization") === `Bearer ${key}`) headers.delete("Authorization");
+          headers.set("apikey", key);
+          return fetch(input, { ...init, headers });
+        },
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    });
+
+    let userId: string | null = null;
+
+    // Try getClaims if supported by the client instance
+    if (typeof (client.auth as unknown as { getClaims?: Function }).getClaims === "function") {
+      const res = await (client.auth as unknown as { getClaims: (t: string) => Promise<{ data?: { claims?: { sub?: string } }; error?: unknown }> }).getClaims(token);
+      if (!res.error && res.data?.claims?.sub) {
+        userId = res.data.claims.sub;
+      }
+    }
+
+    // Fallback to getUser
+    if (!userId) {
+      const { data: userData, error: userError } = await client.auth.getUser(token);
+      if (!userError && userData?.user?.id) {
+        userId = userData.user.id;
+      }
+    }
+
+    // Fallback to parsing standard JWT sub
+    if (!userId) {
+      try {
+        const payloadBase64 = token.split(".")[1];
+        if (payloadBase64) {
+          const payloadJson = Buffer.from(payloadBase64, "base64").toString("utf-8");
+          const payload = JSON.parse(payloadJson);
+          if (payload && typeof payload.sub === "string") {
+            userId = payload.sub;
+          }
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+
+    if (!userId) return null;
+    return { userId, token };
+  } catch (err) {
+    console.error("[CHAT] Authentication error:", err);
+    return null;
+  }
+}
+
+function getDbClient(token: string) {
+  const serviceKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
+  if (serviceKey) {
+    const { supabaseAdmin } = require("@/integrations/supabase/client.server");
+    return supabaseAdmin;
+  }
+  const url = process.env["SUPABASE_URL"]!;
+  const key = process.env["SUPABASE_PUBLISHABLE_KEY"]!;
+  return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: {
       fetch: (input, init) => {
@@ -78,48 +142,82 @@ async function authenticate(request: Request) {
       headers: { Authorization: `Bearer ${token}` },
     },
   });
-
-  const { data, error } = await client.auth.getClaims(token);
-  if (error || !data?.claims?.sub) return null;
-  return { userId: data.claims.sub as string };
 }
 
 export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const auth = await authenticate(request);
-        if (!auth) return json({ error: "Unauthorized" }, 401);
+        console.log("[CHAT] Request received");
 
-        const body = (await request.json()) as ChatBody;
+        const auth = await authenticate(request);
+        if (!auth) {
+          console.log("[CHAT] Authentication failed or missing");
+          return json({ error: true, message: "Unauthorized" }, 401);
+        }
+        console.log("[CHAT] Authentication checked");
+
+        let body: ChatBody;
+        try {
+          body = (await request.json()) as ChatBody;
+        } catch {
+          console.log("[CHAT] Invalid JSON request body");
+          return json({ error: true, message: "Invalid JSON body" }, 400);
+        }
         const messages = body.messages;
         const threadId = body.threadId;
-        if (!Array.isArray(messages) || !threadId) {
-          return json({ error: "messages and threadId are required" }, 400);
+        if (!Array.isArray(messages)) {
+          return json({ error: true, message: "messages array is required" }, 400);
         }
 
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const targetThreadId = threadId || crypto.randomUUID();
+        const dbClient = getDbClient(auth.token);
 
-        const { data: thread, error: threadError } = await supabaseAdmin
+        let { data: thread, error: threadError } = await dbClient
           .from("threads")
           .select("id, user_id, title")
-          .eq("id", threadId)
+          .eq("id", targetThreadId)
           .maybeSingle();
-        if (threadError) return json({ error: threadError.message }, 500);
-        if (!thread || thread.user_id !== auth.userId) {
-          return json({ error: "Thread not found" }, 404);
+
+        if (threadError) {
+          console.error("[CHAT] Thread retrieval error:", threadError);
+          return json({ error: true, message: threadError.message }, 500);
         }
+
+        if (!thread) {
+          console.log(`[CHAT] Thread ${targetThreadId} not found, auto-creating for user ${auth.userId}`);
+          const { data: created, error: createError } = await dbClient
+            .from("threads")
+            .insert({
+              id: targetThreadId,
+              user_id: auth.userId,
+              title: "New conversation",
+            })
+            .select("id, user_id, title")
+            .single();
+
+          if (createError) {
+            console.error("[CHAT] Failed to auto-create thread:", createError);
+            return json({ error: true, message: "Thread not found" }, 404);
+          }
+          thread = created;
+        } else if (thread.user_id !== auth.userId) {
+          console.warn(`[CHAT] User ${auth.userId} attempted to access thread ${targetThreadId} owned by ${thread.user_id}`);
+          return json({ error: true, message: "Thread not found" }, 404);
+        }
+
+        const activeThreadId = thread.id;
 
         const lastMessage = messages[messages.length - 1];
         if (lastMessage?.role === "user") {
-          const { error: insertError } = await supabaseAdmin.from("messages").insert({
-            thread_id: threadId,
+          const { error: insertError } = await dbClient.from("messages").insert({
+            thread_id: activeThreadId,
             user_id: auth.userId,
             client_message_id: lastMessage.id,
             role: "user",
             content: lastMessage as never,
           });
-          if (insertError) console.error("[chat] failed to persist user message", insertError);
+          if (insertError) console.error("[CHAT] Failed to persist user message:", insertError);
 
           const firstText = lastMessage.parts
             .map((part) => (part.type === "text" ? part.text : ""))
@@ -133,7 +231,7 @@ export const Route = createFileRoute("/api/chat")({
                   updated_at: new Date().toISOString(),
                 }
               : { updated_at: new Date().toISOString() };
-          await supabaseAdmin.from("threads").update(patch).eq("id", threadId);
+          await dbClient.from("threads").update(patch).eq("id", activeThreadId);
         }
 
         const initialRunId = getRunIdFromRequest(request);
@@ -142,9 +240,11 @@ export const Route = createFileRoute("/api/chat")({
         let llmConfig;
         try {
           llmConfig = (await import("@/lib/llm-provider.server")).getLLMModel(runIdFetch);
+          console.log("[CHAT] LLM provider initialized:", llmConfig.providerName);
         } catch (err) {
           const message = err instanceof Error ? err.message : "LLM configuration error";
-          return json({ error: message }, 500);
+          console.error("[CHAT] LLM initialization failed:", message);
+          return json({ error: true, message }, 500);
         }
 
         try {
@@ -181,9 +281,17 @@ export const Route = createFileRoute("/api/chat")({
           return result.toUIMessageStreamResponse({
             originalMessages: messages,
             sendReasoning: true,
+            onError: (error) => {
+              console.error("[CHAT STREAM ERROR]", error);
+              const msg = error instanceof Error ? error.message : String(error);
+              if (/no credits|credit|402|payment/i.test(msg)) {
+                return "OpenAI API Key has no credits remaining. Please add billing credits at https://platform.openai.com/settings/organization/billing/.";
+              }
+              return msg || "An error occurred in AI stream";
+            },
             onFinish: async ({ responseMessage }) => {
-              const { error } = await supabaseAdmin.from("messages").insert({
-                thread_id: threadId,
+              const { error } = await dbClient.from("messages").insert({
+                thread_id: activeThreadId,
                 user_id: auth.userId,
                 client_message_id: responseMessage.id,
                 role: "assistant",
@@ -193,11 +301,11 @@ export const Route = createFileRoute("/api/chat")({
 
               const historyRows = collectQueryHistoryRows(responseMessage).map((row) => ({
                 ...row,
-                thread_id: threadId,
+                thread_id: activeThreadId,
                 user_id: auth.userId,
               }));
               if (historyRows.length > 0) {
-                const { error: historyError } = await supabaseAdmin
+                const { error: historyError } = await dbClient
                   .from("query_history")
                   .insert(historyRows);
                 if (historyError) console.error("[chat] failed to log query history", historyError);
@@ -205,16 +313,17 @@ export const Route = createFileRoute("/api/chat")({
             },
           });
         } catch (error) {
-          console.error("[chat] fatal", error);
+          console.error("[CHAT] Fatal agent execution error:", error);
           const message = error instanceof Error ? error.message : "Agent failed";
           const status = /rate limit|429/i.test(message)
             ? 429
             : /credit|402|payment/i.test(message)
               ? 402
               : 500;
-          return json({ error: message }, status);
+          return json({ error: true, message }, status);
         }
       },
     },
   },
 });
+

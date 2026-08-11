@@ -37,8 +37,18 @@ export const agentTools = {
       "Inspect the analytics database. Returns every table, its columns with data types and nullability, plus foreign-key relationships. Always call this before writing SQL for the first time in a conversation.",
     inputSchema: z.object({}),
     execute: async () => {
-      const schema = await getSchema();
-      return schema;
+      try {
+        const schema = await getSchema();
+        return schema;
+      } catch (error) {
+        console.error("[TOOL get_schema Error]", error);
+        return {
+          error: error instanceof Error ? error.message : "Schema inspection failed",
+          schema: "demo",
+          tables: [],
+          relationships: [],
+        };
+      }
     },
   }),
 
