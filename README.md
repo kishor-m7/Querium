@@ -3,7 +3,9 @@
 A production-style AI data analyst that turns plain-language questions into live SQL queries, visual charts, and structured insights—with complete transparency at every step.
 
 **Live Demo:** https://querium.vercel.app/
+
 **Demo Username:** admin@querium.com
+
 **Password:** queirum
 ---
 
