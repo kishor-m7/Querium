@@ -39,7 +39,7 @@ composer.
 
 ### 2. The request is authenticated and persisted
 
-The endpoint verifies the caller's bearer token against Lovable Cloud auth, confirms the
+The endpoint verifies the caller's bearer token against  Cloud auth, confirms the
 thread belongs to that user, and writes the new user message to `messages` before any model
 call. If the thread has no title yet, one is derived from this first question.
 
