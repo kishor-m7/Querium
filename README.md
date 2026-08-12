@@ -7,6 +7,7 @@ A production-style AI data analyst that turns plain-language questions into live
 **Demo Username:** admin@querium.com
 
 **Password:** queirum
+
 ---
 
 ## Overview
