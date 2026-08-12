@@ -10,6 +10,7 @@ import {
 } from "@/lib/ai-gateway.server";
 import { AGENT_SYSTEM_PROMPT, agentTools } from "@/lib/agent/tools.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { normalizeError } from "@/lib/error-capture";
 
 type ChatBody = { messages?: UIMessage[]; threadId?: string; confirmSql?: boolean };
 
@@ -288,11 +289,16 @@ export const Route = createFileRoute("/api/chat")({
               sendReasoning: true,
               onError: (error) => {
                 console.error("[CHAT STREAM ERROR]", error);
-                const msg = normalizeError(error);
-                if (/no credits|credit|402|payment/i.test(msg)) {
-                  return "OpenAI API Key has no credits remaining. Please add billing credits at https://platform.openai.com/settings/organization/billing/.";
+                try {
+                  const msg = normalizeError(error);
+                  if (/no credits|credit|402|payment/i.test(msg)) {
+                    return "API Key has no credits remaining. Please check your account billing.";
+                  }
+                  return msg || "An error occurred in AI stream";
+                } catch (fallbackErr) {
+                  console.error("[CHAT STREAM ERROR FALLBACK]", fallbackErr, error);
+                  return "An unexpected AI streaming error occurred.";
                 }
-                return msg || "An error occurred in AI stream";
               },
               onFinish: async ({ responseMessage }) => {
                 const { error } = await dbClient.from("messages").insert({
