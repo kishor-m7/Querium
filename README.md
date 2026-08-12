@@ -130,8 +130,8 @@ Roughly $6.2M of revenue to slice by month, country, segment, channel and catego
 | --- | --- |
 | Framework | TanStack Start (React 19 + Vite, SSR + server functions) |
 | Agent runtime | Vercel AI SDK v7 (`streamText`, tool calling, tool approval) |
-| Model | Lovable AI Gateway (OpenAI Responses API, reasoning enabled) |
-| Database + auth | Lovable Cloud (Postgres + row-level security) |
+| Model | AI Gateway (OpenAI Responses API, reasoning enabled) |
+| Database + auth | Cloud (Postgres + row-level security) |
 | Charts | Recharts · Diagrams: Mermaid · Exports: html-to-image |
 | UI | Tailwind v4, shadcn/ui, AI Elements chat primitives |
 
