@@ -156,9 +156,4 @@ Sign in with Google or email, and ask something like:
 - "Draw an ER diagram of this database"
 - "How does revenue split by country, and what stands out?"
 
-Local development:
 
-```sh
-bun install
-bun run dev
-```
