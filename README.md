@@ -3,7 +3,8 @@
 A production-style AI data analyst that turns plain-language questions into live SQL queries, visual charts, and structured insights—with complete transparency at every step.
 
 **Live Demo:** https://querium.vercel.app/
-
+**Demo Username:** admin@querium.com
+**Password:** queirum
 ---
 
 ## Overview
@@ -256,7 +257,7 @@ Built for the Sairam Hackathon 2026. See LICENSE for details.
 ## Support & Feedback
 
 For issues, questions, or feedback:
-1. Check the [GitHub Issues](https://github.com/your-org/querium/issues)
+1. Check the [GitHub Issues](https://github.com/kishor-m7/querium/issues)
 2. Start a new discussion or open an issue with details and screenshots
 3. Contact the team via [hackathon organizers]
 
