@@ -9,7 +9,7 @@ import {
   getRunIdFromRequest,
 } from "@/lib/ai-gateway.server";
 import { AGENT_SYSTEM_PROMPT, agentTools } from "@/lib/agent/tools.server";
-import { normalizeError } from "@/lib/error-capture";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 type ChatBody = { messages?: UIMessage[]; threadId?: string; confirmSql?: boolean };
 
@@ -126,7 +126,6 @@ async function authenticate(request: Request) {
 function getDbClient(token: string) {
   const serviceKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
   if (serviceKey) {
-    const { supabaseAdmin } = require("@/integrations/supabase/client.server");
     return supabaseAdmin;
   }
   const url = process.env["SUPABASE_URL"]!;
